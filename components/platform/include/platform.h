@@ -10,6 +10,8 @@
 
 #include "esp_task.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
 
 #define PLATFORM_ALIGNMENT __attribute__((aligned(4)))
 #define PLATFORM_ALIGNMENT_PACKED __attribute__((aligned(4),packed))
@@ -93,6 +95,7 @@ typedef struct {
 typedef struct {
   QueueHandle_t queue;
   xTaskHandle taskHandle;
+  TimerHandle_t timer;
   int receive_rf;
   int error_rf;
   char *line_buffer;

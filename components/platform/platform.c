@@ -27,10 +27,11 @@ int platform_gpio_output_exists( unsigned gpio ) { return GPIO_IS_VALID_OUTPUT_G
 // ****************************************************************************
 // UART
 
-#define PLATFORM_UART_EVENT_DATA     (UART_EVENT_MAX + 1)
-#define PLATFORM_UART_EVENT_OOM      (UART_EVENT_MAX + 2)
-#define PLATFORM_UART_EVENT_RX       (UART_EVENT_MAX + 3)
-#define PLATFORM_UART_EVENT_BREAK    (UART_EVENT_MAX + 4)
+#define PLATFORM_UART_EVENT_DATA            (UART_EVENT_MAX + 1)
+#define PLATFORM_UART_EVENT_OOM             (UART_EVENT_MAX + 2)
+#define PLATFORM_UART_EVENT_RX              (UART_EVENT_MAX + 3)
+#define PLATFORM_UART_EVENT_BREAK           (UART_EVENT_MAX + 4)
+#define PLATFORM_UART_EVENT_DATA_TIMEOUT    (UART_EVENT_MAX + 5)
 
 static const char *UART_TAG = "uart";
 
@@ -41,6 +42,28 @@ SemaphoreHandle_t sem = NULL;
 extern bool uart_on_data_cb(unsigned id, const char *buf, size_t len);
 extern bool uart_on_error_cb(unsigned id, const char *buf, size_t len);
 task_handle_t uart_event_task_id = 0;
+
+static void uart_timer_callback(TimerHandle_t xTimer)
+{
+  if (sem == NULL)
+    sem = xSemaphoreCreateCounting(4, 4);
+  void *pvParameters = pvTimerGetTimerID(xTimer);
+  unsigned id = (unsigned)pvParameters;
+  uart_event_post_t* post = (uart_event_post_t*)malloc(sizeof(uart_event_post_t));
+  post->id = id;
+  post->type = PLATFORM_UART_EVENT_DATA_TIMEOUT;
+  post->data = NULL;
+  if (post != NULL) {
+    xSemaphoreTake(sem, portMAX_DELAY);
+    if (!task_post_medium(uart_event_task_id, (task_param_t)post))
+    {
+      xSemaphoreGive(sem);
+      free(post);
+      
+    }
+    post = NULL;
+  }
+}
 
 void uart_event_task( task_param_t param, task_prio_t prio ) {
   uint16_t need_len;
@@ -68,9 +91,17 @@ void uart_event_task( task_param_t param, task_prio_t prio ) {
       if (at_end || end_char_found) {
         uart_on_data_cb(id, us->line_buffer, us->line_position);
         us->line_position = 0;
+        xTimerStop(us->timer, portMAX_DELAY);
+      } else {
+        xTimerStart(us->timer, portMAX_DELAY);
       }
     }
     free(post->data);
+  } else if (post->type == PLATFORM_UART_EVENT_DATA_TIMEOUT)  {
+    if (us->line_position > 0) {
+      uart_on_data_cb(id, us->line_buffer, us->line_position);
+      us->line_position = 0;
+    }
   } else {
     char *err;
     switch(post->type) {
@@ -255,7 +286,6 @@ uint32_t platform_uart_setup( unsigned id, uint32_t baud, int databits, int pari
                         );
 
     if(uart_event_task_id == 0) uart_event_task_id = task_get_id( uart_event_task );
-
     return baud;
   }
 }
@@ -314,7 +344,19 @@ int platform_uart_start( unsigned id )
     return 0;
   else {
     uart_status_t *us = & uart_status[id];
-    
+    if (us->timer) {
+      xTimerDelete(us->timer, portMAX_DELAY);
+    }
+    us->timer = xTimerCreate("uart",
+      pdMS_TO_TICKS(15),
+      pdFALSE,
+      (void*)id,
+      uart_timer_callback);
+
+    if (!us->timer) {
+      ESP_LOGE(UART_TAG,"FreeRTOS timer creation failed");
+      return -1;
+    }
     esp_err_t ret = uart_driver_install(id, UART_BUFFER_SIZE, UART_BUFFER_SIZE, 3, & us->queue, 0);
     if(ret != ESP_OK) {
       return -1;
