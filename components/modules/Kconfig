@@ -61,6 +61,12 @@ config NODEMCU_CMODULE_BIT
       Includes the bit module. This module provide bit manipulation functions
       on Lua numbers.
 
+config NODEMCU_CMODULE_GATT
+  bool "Blue GATT module"
+  default "n"
+  help
+      Includes the gatt module.
+
 config NODEMCU_CMODULE_BTHCI
   bool "BlueTooth HCI interface module"
   default "n"
