@@ -19,6 +19,96 @@
 
 #define GATTS_TAG "GATTS_DEMO"
 
+typedef void (*fill_cb_arg_fn) (lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+typedef struct
+{
+  const char *name;
+  esp_gatts_cb_event_t event_id;
+  fill_cb_arg_fn fill_cb_arg;
+} event_desc_t;
+
+#define ARRAY_LEN(a) (sizeof(a) / sizeof(a[0]))
+
+static int gatt_event_idx_by_name (const event_desc_t *table, unsigned n, const char *name)
+{
+  for (unsigned i = 0; i < n; ++i)
+    if (strcmp (table[i].name, name) == 0)
+      return i;
+  return -1;
+}
+
+static int gatt_event_idx_by_id (const event_desc_t *table, unsigned n, esp_gatts_cb_event_t id)
+{
+  for (unsigned i = 0; i < n; ++i)
+    if (table[i].event_id == id)
+      return i;
+  return -1;
+}
+
+static void gatt_read (lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+static void gatt_write (lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+static void empty_arg (lua_State *L, esp_gatt_if_t gatts_if,  esp_ble_gatts_cb_param_t *param) {};
+static void on_event (esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+
+static const event_desc_t events[] =
+{
+  { "reg",                  ESP_GATTS_REG_EVT,                 empty_arg  },
+  { "read",                 ESP_GATTS_READ_EVT,                gatt_read  },
+  { "write",                ESP_GATTS_WRITE_EVT,               gatt_write  },
+  { "exec_write",           ESP_GATTS_EXEC_WRITE_EVT,          empty_arg  },
+  { "mtc",                  ESP_GATTS_MTU_EVT,                 empty_arg  },
+  { "conf",                 ESP_GATTS_CONF_EVT,                empty_arg  },
+  { "unreg",                ESP_GATTS_UNREG_EVT,               empty_arg  },
+  { "create",               ESP_GATTS_CREATE_EVT,              empty_arg  },
+  { "add_incl_sevc",        ESP_GATTS_ADD_INCL_SRVC_EVT,       empty_arg  },
+  { "add_char",             ESP_GATTS_ADD_CHAR_EVT,            empty_arg  },
+  { "add_char_descr",       ESP_GATTS_ADD_CHAR_DESCR_EVT,      empty_arg  },
+  { "delete",               ESP_GATTS_DELETE_EVT,              empty_arg  },
+  { "start",                ESP_GATTS_START_EVT,               empty_arg  },
+  { "stop",                 ESP_GATTS_STOP_EVT,                empty_arg  },
+  { "connect",              ESP_GATTS_CONNECT_EVT,             empty_arg  },
+  { "disconnect",           ESP_GATTS_DISCONNECT_EVT,          empty_arg  },
+  { "open",                 ESP_GATTS_OPEN_EVT,                empty_arg  },
+  { "cancel_open",          ESP_GATTS_CANCEL_OPEN_EVT,         empty_arg  },
+  { "close",                ESP_GATTS_CLOSE_EVT,               empty_arg  },
+  { "listen",               ESP_GATTS_LISTEN_EVT,              empty_arg  },
+  { "congest",              ESP_GATTS_CONGEST_EVT,             empty_arg  },
+  { "response",             ESP_GATTS_RESPONSE_EVT,            empty_arg  },
+  { "creat_attr",           ESP_GATTS_CREAT_ATTR_TAB_EVT,      empty_arg  },
+  { "set_attr",             ESP_GATTS_SET_ATTR_VAL_EVT,        empty_arg  },
+  { "send_service_change",  ESP_GATTS_SEND_SERVICE_CHANGE_EVT, empty_arg  },
+};
+
+static void gatt_read (lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
+{
+//   lua_pushnumber (L, gatts_if);
+//   lua_setfield (L, -2, 'gatts_if');
+
+  lua_pushnumber (L, param->read.conn_id);
+  lua_setfield (L, -2, "conn_id");
+
+  lua_pushnumber (L, param->read.trans_id);
+  lua_setfield (L, -2, "trans_id");
+}
+
+static void gatt_write (lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
+{
+//   lua_pushnumber (L, gatts_if);
+//   lua_setfield (L, -2, 'gatts_if');
+
+  lua_pushnumber (L, param->write.conn_id);
+  lua_setfield (L, -2, "conn_id");
+
+  lua_pushnumber (L, param->write.trans_id);
+  lua_setfield (L, -2, "trans_id");
+    lua_pushlstring (L, (const char *)param->write.value, param->write.len);
+    lua_setfield (L, -2, "write_value");
+}
+
+static int event_cb[ARRAY_LEN(events)];
+
+
+
 ///Declare the static function
 static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 
@@ -32,7 +122,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
 
 #define GATTS_DEMO_CHAR_VAL_LEN_MAX 0x40
 
-#define PREPARE_BUF_MAX_SIZE 1024
+#define PREPARE_BUF_MAX_SIZE 255
 
 static uint8_t char1_str[] = {0x11,0x22,0x33};
 static esp_gatt_char_prop_t a_property = 0;
@@ -266,8 +356,9 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
 }
 
 static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param) {
+    on_event(event, gatts_if, param);
     switch (event) {
-    case ESP_GATTS_REG_EVT:
+    case ESP_GATTS_REG_EVT: // gatt 注册事件
         ESP_LOGI(GATTS_TAG, "REGISTER_APP_EVT, status %d, app_id %d\n", param->reg.status, param->reg.app_id);
         gl_profile_tab[PROFILE_A_APP_ID].service_id.is_primary = true;
         gl_profile_tab[PROFILE_A_APP_ID].service_id.id.inst_id = 0x00;
@@ -275,7 +366,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         gl_profile_tab[PROFILE_A_APP_ID].service_id.id.uuid.uuid.uuid16 = GATTS_SERVICE_UUID_TEST_A;
 
         esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
-        if (set_dev_name_ret){
+        if (set_dev_name_ret) {
             ESP_LOGE(GATTS_TAG, "set device name failed, error code = %x", set_dev_name_ret);
         }
 #ifdef CONFIG_SET_RAW_ADV_DATA
@@ -306,7 +397,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
 #endif
         esp_ble_gatts_create_service(gatts_if, &gl_profile_tab[PROFILE_A_APP_ID].service_id, GATTS_NUM_HANDLE_TEST_A);
         break;
-    case ESP_GATTS_READ_EVT: {
+    case ESP_GATTS_READ_EVT: { // gatt触发读事件
         ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d\n", param->read.conn_id, param->read.trans_id, param->read.handle);
         esp_gatt_rsp_t rsp;
         memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
@@ -320,7 +411,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
                                     ESP_GATT_OK, &rsp);
         break;
     }
-    case ESP_GATTS_WRITE_EVT: {
+    case ESP_GATTS_WRITE_EVT: { // gatt触发写事件
         ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, conn_id %d, trans_id %d, handle %d", param->write.conn_id, param->write.trans_id, param->write.handle);
         if (!param->write.is_prep){
             ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, value len %d, value :", param->write.len);
@@ -374,7 +465,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         break;
     case ESP_GATTS_UNREG_EVT:
         break;
-    case ESP_GATTS_CREATE_EVT:
+    case ESP_GATTS_CREATE_EVT: // gatt服务创建事件
         ESP_LOGI(GATTS_TAG, "CREATE_SERVICE_EVT, status %d,  service_handle %d\n", param->create.status, param->create.service_handle);
         gl_profile_tab[PROFILE_A_APP_ID].service_handle = param->create.service_handle;
         gl_profile_tab[PROFILE_A_APP_ID].char_uuid.len = ESP_UUID_LEN_16;
@@ -496,7 +587,8 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
     } while (0);
 }
 
-void app_main1()
+
+static int gatt_start (lua_State *L)
 {
     esp_err_t ret;
 
@@ -506,65 +598,103 @@ void app_main1()
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
+        return 0;
     }
 
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
+        return 0;
     }
     ret = esp_bluedroid_init();
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s init bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
+        return 0;
     }
     ret = esp_bluedroid_enable();
     if (ret) {
         ESP_LOGE(GATTS_TAG, "%s enable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
+        return 0;
     }
 
     ret = esp_ble_gatts_register_callback(gatts_event_handler);
     if (ret){
         ESP_LOGE(GATTS_TAG, "gatts register error, error code = %x", ret);
-        return;
+        return 0;
     }
     ret = esp_ble_gap_register_callback(gap_event_handler);
     if (ret){
         ESP_LOGE(GATTS_TAG, "gap register error, error code = %x", ret);
-        return;
+        return 0;
     }
     ret = esp_ble_gatts_app_register(PROFILE_A_APP_ID);
     if (ret){
         ESP_LOGE(GATTS_TAG, "gatts app register error, error code = %x", ret);
-        return;
+        return 0;
     }
     esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
     if (local_mtu_ret){
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
 
-    return;
-}
-
-
-static int start (lua_State *L)
-{
-    app_main1();
     return 0;
 }
 
+static int gatt_stop(lua_State *L) {
+    return 0;
+}
+
+static void on_event (esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
+{
+  int idx = gatt_event_idx_by_id (events, ARRAY_LEN(events), evt);
+  if (idx < 0 || event_cb[idx] == LUA_NOREF)
+    return;
+
+  lua_State *L = lua_getstate ();
+  lua_rawgeti (L, LUA_REGISTRYINDEX, event_cb[idx]);
+  lua_pushstring (L, events[idx].name);
+  lua_createtable (L, 0, 5);
+  events[idx].fill_cb_arg (L, gatts_if, param);
+  lua_call (L, 2, 0);
+}
+
+
+// test pass
+static int gatt_on (lua_State *L)
+{
+  const char *event_name = luaL_checkstring (L, 1);
+  ESP_LOGE(GATTS_TAG, "gatt on name: %s", event_name);
+  if (!lua_isnoneornil (L, 2))
+    luaL_checkanyfunction (L, 2);
+  lua_settop (L, 2);
+    
+  int idx = gatt_event_idx_by_name (events, ARRAY_LEN(events), event_name);
+  ESP_LOGE(GATTS_TAG, "gatt on idx: %d", idx);
+  if (idx < 0)
+    return luaL_error (L, "unknown event: %s", event_name);
+
+  luaL_unref (L, LUA_REGISTRYINDEX, event_cb[idx]);
+  event_cb[idx] = lua_isnoneornil (L, 2) ?
+    LUA_NOREF : luaL_ref (L, LUA_REGISTRYINDEX);
+
+  return 0;
+}
+
+static int gatt_init (lua_State *L)
+{
+    for (unsigned i = 0; i < ARRAY_LEN(event_cb); ++i) {
+        event_cb[i] = LUA_NOREF;
+    }
+    return 0;
+}
 
 // Module function map
 LROT_BEGIN(gatt)
-    LROT_FUNCENTRY(start, start)
+    LROT_FUNCENTRY(start,                        gatt_start)
+    LROT_FUNCENTRY(stop,                         gatt_stop)
+    LROT_FUNCENTRY(on,                           gatt_on)
+    // LROT_FUNCENTRY(send_indicate,                gatt_on)
+    // LROT_FUNCENTRY(send_response,                gatt_on)
 LROT_END(gatt, NULL, 0)
 
-// module_init is invoked on device startup
-static int module_init(lua_State* L) {
-    ESP_LOGE(GATTS_TAG, "gatt init");
-    return 0;
-}
-
-NODEMCU_MODULE(GATT, "gatt", gatt, module_init);
+NODEMCU_MODULE(GATT, "gatt", gatt, gatt_init);
