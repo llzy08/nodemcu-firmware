@@ -109,8 +109,8 @@ static int event_cb[ARRAY_LEN(events)];
 ///Declare the static function
 static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 
-#define GATTS_SERVICE_UUID_TEST_A 0x00FF
-#define GATTS_CHAR_UUID_TEST_A 0xFF01
+#define GATTS_SERVICE_UUID_TEST_A 0xAAAA
+#define GATTS_CHAR_UUID_TEST_A 0xCCC0
 #define GATTS_DESCR_UUID_TEST_A 0x3333
 #define GATTS_NUM_HANDLE_TEST_A 4
 
@@ -183,7 +183,7 @@ static uint8_t adv_service_uuid128[32] = {
 };
 
 // The length of adv data must be less than 31 bytes
-//static uint8_t test_manufacturer[TEST_MANUFACTURER_DATA_LEN] =  {0x12, 0x23, 0x45, 0x56};
+static uint8_t test_manufacturer[TEST_MANUFACTURER_DATA_LEN] =  {0x12, 0x23, 0x45, 0x56};
 //adv data
 static esp_ble_adv_data_t adv_data = {
     .set_scan_rsp = false,
@@ -192,8 +192,8 @@ static esp_ble_adv_data_t adv_data = {
     .min_interval = 0x0006, //slave connection min interval, Time = min_interval * 1.25 msec
     .max_interval = 0x0010, //slave connection max interval, Time = max_interval * 1.25 msec
     .appearance = 0x00,
-    .manufacturer_len = 0,       //TEST_MANUFACTURER_DATA_LEN,
-    .p_manufacturer_data = NULL, //&test_manufacturer[0],
+    .manufacturer_len = TEST_MANUFACTURER_DATA_LEN,
+    .p_manufacturer_data = &test_manufacturer[0],
     .service_data_len = 0,
     .p_service_data = NULL,
     .service_uuid_len = sizeof(adv_service_uuid128),
@@ -208,8 +208,8 @@ static esp_ble_adv_data_t scan_rsp_data = {
     .min_interval = 0x0006,
     .max_interval = 0x0010,
     .appearance = 0x00,
-    .manufacturer_len = 0,       //TEST_MANUFACTURER_DATA_LEN,
-    .p_manufacturer_data = NULL, //&test_manufacturer[0],
+    .manufacturer_len = TEST_MANUFACTURER_DATA_LEN,
+    .p_manufacturer_data = &test_manufacturer[0],
     .service_data_len = 0,
     .p_service_data = NULL,
     .service_uuid_len = sizeof(adv_service_uuid128),
@@ -491,14 +491,14 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
                     if (a_property & ESP_GATT_CHAR_PROP_BIT_NOTIFY)
                     {
                         ESP_LOGI(GATTS_TAG, "notify enable");
-                        uint8_t notify_data[15];
-                        for (int i = 0; i < sizeof(notify_data); ++i)
-                        {
-                            notify_data[i] = i % 0xff;
-                        }
-                        //the size of notify_data[] need less than MTU size
-                        esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                                    sizeof(notify_data), notify_data, false);
+                        // uint8_t notify_data[15];
+                        // for (int i = 0; i < sizeof(notify_data); ++i)
+                        // {
+                        //     notify_data[i] = i % 0xff;
+                        // }
+                        // //the size of notify_data[] need less than MTU size
+                        // esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+                        //                             sizeof(notify_data), notify_data, false);
                     }
                 }
                 else if (descr_value == 0x0002)
@@ -506,14 +506,14 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
                     if (a_property & ESP_GATT_CHAR_PROP_BIT_INDICATE)
                     {
                         ESP_LOGI(GATTS_TAG, "indicate enable");
-                        uint8_t indicate_data[15];
-                        for (int i = 0; i < sizeof(indicate_data); ++i)
-                        {
-                            indicate_data[i] = i % 0xff;
-                        }
-                        //the size of indicate_data[] need less than MTU size
-                        esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                                    sizeof(indicate_data), indicate_data, true);
+                        // uint8_t indicate_data[15];
+                        // for (int i = 0; i < sizeof(indicate_data); ++i)
+                        // {
+                        //     indicate_data[i] = i % 0xff;
+                        // }
+                        // //the size of indicate_data[] need less than MTU size
+                        // esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+                        //                             sizeof(indicate_data), indicate_data, true);
                     }
                 }
                 else if (descr_value == 0x0000)
@@ -809,8 +809,24 @@ static int gatt_response (lua_State *L) {
     rsp.attr_value.handle = gl_profile_tab[PROFILE_A_APP_ID].read_handle;
     rsp.attr_value.len = len;
     memcpy(rsp.attr_value.value, buf, len);
-    esp_ble_gatts_send_response(gl_profile_tab[PROFILE_A_APP_ID].gatts_if, conn_id, trans_id,
+    esp_err_t ret = esp_ble_gatts_send_response(gl_profile_tab[PROFILE_A_APP_ID].gatts_if, conn_id, trans_id,
                                 ESP_GATT_OK, &rsp);
+    if (ret)
+    {
+        ESP_LOGE(GATTS_TAG, "gatts response error, error code = %x", ret);
+        return 0;
+    }                           
+    return 0;
+}
+
+static int gatt_setBleName (lua_State *L) {
+    const char* buf = luaL_checklstring(L, 1, NULL);
+    ESP_LOGE(GATTS_TAG, "set ble name :%s", buf);
+    esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(buf);
+    if (set_dev_name_ret)
+    {
+        ESP_LOGE(GATTS_TAG, "set device name failed, error code = %x", set_dev_name_ret);
+    }
     return 0;
 }
 
@@ -830,6 +846,7 @@ LROT_FUNCENTRY(stop, gatt_stop)
 LROT_FUNCENTRY(on, gatt_on)
 LROT_FUNCENTRY(notfiy, gatt_notify)
 LROT_FUNCENTRY(response, gatt_response)
+LROT_FUNCENTRY(setblename, gatt_setBleName)
 LROT_END(gatt, NULL, 0)
 
 NODEMCU_MODULE(GATT, "gatt", gatt, gatt_init);
