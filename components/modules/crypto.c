@@ -1,10 +1,15 @@
 #include <limits.h>
 #include <string.h>
+#include "lua.h"
 #include "lauxlib.h"
 #include "lmem.h"
 #include "mbedtls/md.h"
 #include "module.h"
 #include "platform.h"
+
+#include "mech.h"
+#include "sdk-aes.h"
+
 
 #define HASH_METATABLE "crypto.hasher"
 
@@ -152,6 +157,152 @@ static int crypto_hash_gc(lua_State* L) {
     return 0;
 }
 
+
+
+/* ----- AES ---------------------------------------------------------- */
+
+static const struct aes_funcs
+{
+  void *(*init) (const char *key, size_t keylen);
+  void (*crypt) (void *ctx, const char *in, char *out);
+  void (*deinit) (void *ctx);
+} aes_funcs[] =
+{
+  { aes_encrypt_init, aes_encrypt, aes_encrypt_deinit },
+  { aes_decrypt_init, aes_decrypt, aes_decrypt_deinit }
+};
+
+static bool do_aes (crypto_op_t *co, bool with_cbc)
+{
+  const struct aes_funcs *funcs = &aes_funcs[co->op];
+
+  void *ctx = funcs->init (co->key, co->keylen);
+  if (!ctx)
+    return false;
+
+  char iv[AES_BLOCKSIZE] = { 0 };
+  if (with_cbc && co->ivlen)
+    memcpy (iv, co->iv, co->ivlen < AES_BLOCKSIZE ? co->ivlen : AES_BLOCKSIZE);
+
+  const char *src = co->data;
+  char *dst = co->out;
+
+  size_t left = co->datalen;
+  while (left)
+  {
+    char block[AES_BLOCKSIZE] = { 0 };
+    size_t n = left > AES_BLOCKSIZE ? AES_BLOCKSIZE : left;
+    memcpy (block, src, n);
+
+    if (with_cbc && co->op == OP_ENCRYPT)
+    {
+      const char *xor = (src == co->data) ? iv : dst - AES_BLOCKSIZE;
+      int i;
+      for (i = 0; i < AES_BLOCKSIZE; ++i)
+        block[i] ^= xor[i];
+    }
+
+    funcs->crypt (ctx, block, dst);
+
+    if (with_cbc && co->op == OP_DECRYPT)
+    {
+      const char *xor = (src == co->data) ? iv : src - AES_BLOCKSIZE;
+      int i;
+      for (i = 0; i < AES_BLOCKSIZE; ++i)
+        dst[i] ^= xor[i];
+    }
+
+    left -= n;
+    src += n;
+    dst += n;
+  }
+
+  funcs->deinit (ctx);
+  return true;
+}
+
+
+static bool do_aes_ecb (crypto_op_t *co)
+{
+  return do_aes (co, false);
+}
+
+static bool do_aes_cbc (crypto_op_t *co)
+{
+  return do_aes (co, true);
+}
+
+
+/* ----- mechs -------------------------------------------------------- */
+
+static const crypto_mech_t mechs[] =
+{
+  { "AES-ECB",  do_aes_ecb, AES_BLOCKSIZE },
+  { "AES-CBC",  do_aes_cbc, AES_BLOCKSIZE }
+};
+
+
+const crypto_mech_t *crypto_encryption_mech (const char *name)
+{
+  size_t i;
+  for (i = 0; i < sizeof (mechs) / sizeof (mechs[0]); ++i)
+  {
+    const crypto_mech_t *mech = mechs + i;
+    if (strcasecmp (name, mech->name) == 0)
+      return mech;
+  }
+  return 0;
+}
+
+static const crypto_mech_t *get_mech(lua_State *L, int idx)
+{
+  const char *name = luaL_checkstring(L, idx);
+  const crypto_mech_t *mech = crypto_encryption_mech(name);
+  if (mech)
+    return mech;
+  luaL_error(L, "unknown cipher: %s", name);
+  __builtin_unreachable();
+}
+
+static int crypto_encdec(lua_State *L, bool enc)
+{
+  const crypto_mech_t *mech = get_mech(L, 1);
+  size_t klen, dlen, ivlen, bs = mech->block_size;
+
+  const char *key = luaL_checklstring(L, 2, &klen);
+  const char *data = luaL_checklstring(L, 3, &dlen);
+  const char *iv = luaL_optlstring(L, 4, "", &ivlen);
+
+  size_t outlen = ((dlen + bs - 1) / bs) * bs;
+
+  char *buf = luaM_newvector(L, outlen, char);
+
+  crypto_op_t op = {
+      key, klen,
+      iv, ivlen,
+      data, dlen,
+      buf, outlen,
+      enc ? OP_ENCRYPT : OP_DECRYPT};
+
+  int status = mech->run(&op);
+
+  lua_pushlstring(L, buf, outlen); /* discarded on error but what the hell */
+  luaM_freearray(L, buf, outlen, char);
+
+  return status ? 1 : luaL_error(L, "crypto op failed");
+}
+
+static int lcrypto_encrypt(lua_State *L)
+{
+  return crypto_encdec(L, true);
+}
+
+static int lcrypto_decrypt(lua_State *L)
+{
+  return crypto_encdec(L, false);
+}
+
+
 // The following table defines methods of the hasher object
 LROT_BEGIN(crypto_hasher)
     LROT_FUNCENTRY(update,   crypto_hash_update)
@@ -164,6 +315,8 @@ LROT_END(crypto_hasher, NULL, 0)
 LROT_BEGIN(crypto)
     LROT_FUNCENTRY(new_hash, crypto_new_hash)
     LROT_FUNCENTRY(new_hmac, crypto_new_hmac)
+    LROT_FUNCENTRY(encrypt, lcrypto_encrypt)
+    LROT_FUNCENTRY(decrypt, lcrypto_decrypt)
 LROT_END(crypto, NULL, 0)
 
 // luaopen_crypto is the crypto module initialization function
