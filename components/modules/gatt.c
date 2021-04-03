@@ -46,6 +46,7 @@ static int gatt_event_idx_by_id(const event_desc_t *table, unsigned n, esp_gatts
 
 static void gatt_read(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 static void gatt_write_evt(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+static void gatt_mtu_evt(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 static void empty_arg(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param){};
 static void on_event(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 
@@ -55,7 +56,7 @@ static const event_desc_t events[] =
         {"read", ESP_GATTS_READ_EVT, gatt_read},
         {"write", ESP_GATTS_WRITE_EVT, gatt_write_evt},
         {"exec_write", ESP_GATTS_EXEC_WRITE_EVT, empty_arg},
-        {"mtc", ESP_GATTS_MTU_EVT, empty_arg},
+        {"mtu", ESP_GATTS_MTU_EVT, gatt_mtu_evt},
         {"conf", ESP_GATTS_CONF_EVT, empty_arg},
         {"unreg", ESP_GATTS_UNREG_EVT, empty_arg},
         {"create", ESP_GATTS_CREATE_EVT, empty_arg},
@@ -80,9 +81,6 @@ static const event_desc_t events[] =
 
 static void gatt_read(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    //   lua_pushnumber (L, gatts_if);
-    //   lua_setfield (L, -2, 'gatts_if');
-
     lua_pushnumber(L, param->read.conn_id);
     lua_setfield(L, -2, "conn_id");
 
@@ -92,9 +90,6 @@ static void gatt_read(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_par
 
 static void gatt_write_evt(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    //   lua_pushnumber (L, gatts_if);
-    //   lua_setfield (L, -2, 'gatts_if');
-
     lua_pushnumber(L, param->write.conn_id);
     lua_setfield(L, -2, "conn_id");
 
@@ -102,6 +97,12 @@ static void gatt_write_evt(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_c
     lua_setfield(L, -2, "trans_id");
     lua_pushlstring(L, (const char *)param->write.value, param->write.len);
     lua_setfield(L, -2, "write_value");
+}
+
+static void gatt_mtu_evt(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
+{
+    lua_pushnumber(L, param->mtu.mtu);
+    lua_setfield(L, -2, "mtu");
 }
 
 static int event_cb[ARRAY_LEN(events)];
@@ -583,7 +584,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         //     ESP_LOGI(GATTS_TAG, "prf_char[%x] =%x\n", i, prf_char[i]);
         // }
         
-        // 添加特征描述符，用来做notfiy的
+        // 添加特征描述符，疑似做notfiy的
         esp_err_t add_descr_ret = esp_ble_gatts_add_char_descr(gl_profile_tab[PROFILE_A_APP_ID].service_handle, &gl_profile_tab[PROFILE_A_APP_ID].descr_uuid,
                                                                ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE, NULL, NULL);
         if (add_descr_ret)
@@ -733,7 +734,7 @@ static int gatt_start(lua_State *L)
         ESP_LOGE(GATTS_TAG, "gatts app register error, error code = %x", ret);
         return 0;
     }
-    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
+    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(23);
     if (local_mtu_ret)
     {
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
