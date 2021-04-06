@@ -2,9 +2,8 @@
 nvs,           data, nvs,      0x9000,   0x4000
 phy_init,      data, phy,      0xd000,   0x1000
 otadata,       data, ota,      0xe000,   0x2000
-factory,       app,  factory,  0x10000,  1500K
-ota_0,         app,  ota_0,    0x190000, 1500K
-# ota_1,         app,  ota_1,    0x260000, 0x120000
+factory,       app,  factory,  0x10000,  1650K
+ota_0,         app,  ota_0,            , 1650K
 # Type 0xC2 => NodeMCU. SubTypes: 0x00 = SPIFFS, 0x01 = LFS
 lfs,           0xC2, 0x01,          ,   0x10000
 nodemcuspiffs, 0xC2, 0x00,          ,   0x70000

@@ -67,6 +67,12 @@ config NODEMCU_CMODULE_GATT
   help
       Includes the gatt module.
 
+config NODEMCU_CMODULE_MESH
+  bool "Blue mesh module"
+  default "n"
+  help
+      Includes the mesh module.
+
 config NODEMCU_CMODULE_BTHCI
   bool "BlueTooth HCI interface module"
   default "n"
