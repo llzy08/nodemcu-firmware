@@ -6,7 +6,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
+#if 0
 #include <stdio.h>
 #include <string.h>
 
@@ -403,3 +403,4 @@ LROT_BEGIN(mesh)
 LROT_END(mesh, NULL, 0)
 
 NODEMCU_MODULE(MESH, "mesh", mesh, NULL);
+#endif
