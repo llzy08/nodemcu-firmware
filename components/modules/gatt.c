@@ -148,43 +148,13 @@ static uint8_t raw_scan_rsp_data[] = {
 static uint8_t adv_service_uuid128[32] = {
     /* LSB <--------------------------------------------------------------------------------> MSB */
     //first uuid, 16bit, [12],[13] is the value
-    0xfb,
-    0x34,
-    0x9b,
-    0x5f,
-    0x80,
-    0x00,
-    0x00,
-    0x80,
-    0x00,
-    0x10,
-    0x00,
-    0x00,
-    0xEE,
-    0x00,
-    0x00,
-    0x00,
+    0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80, 0x00, 0x10, 0x00, 0x00, 0xEE, 0x00, 0x00, 0x00,
     //second uuid, 32bit, [12], [13], [14], [15] is the value
-    0xfb,
-    0x34,
-    0x9b,
-    0x5f,
-    0x80,
-    0x00,
-    0x00,
-    0x80,
-    0x00,
-    0x10,
-    0x00,
-    0x00,
-    0xFF,
-    0x00,
-    0x00,
-    0x00,
+    0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80, 0x00, 0x10, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
 };
 
 // The length of adv data must be less than 31 bytes
-static uint8_t test_manufacturer[TEST_MANUFACTURER_DATA_LEN] =  {0x12, 0x23, 0x45, 0x56};
+// static uint8_t test_manufacturer[TEST_MANUFACTURER_DATA_LEN] =  {0x12, 0x23, 0x45, 0x56};
 //adv data
 static esp_ble_adv_data_t adv_data = {
     .set_scan_rsp = false,
@@ -193,8 +163,8 @@ static esp_ble_adv_data_t adv_data = {
     .min_interval = 0x0006, //slave connection min interval, Time = min_interval * 1.25 msec
     .max_interval = 0x0010, //slave connection max interval, Time = max_interval * 1.25 msec
     .appearance = 0x00,
-    .manufacturer_len = TEST_MANUFACTURER_DATA_LEN,
-    .p_manufacturer_data = &test_manufacturer[0],
+    .manufacturer_len = 0,
+    .p_manufacturer_data = NULL,
     .service_data_len = 0,
     .p_service_data = NULL,
     .service_uuid_len = sizeof(adv_service_uuid128),
@@ -209,8 +179,8 @@ static esp_ble_adv_data_t scan_rsp_data = {
     .min_interval = 0x0006,
     .max_interval = 0x0010,
     .appearance = 0x00,
-    .manufacturer_len = TEST_MANUFACTURER_DATA_LEN,
-    .p_manufacturer_data = &test_manufacturer[0],
+    .manufacturer_len = 0,
+    .p_manufacturer_data = NULL,
     .service_data_len = 0,
     .p_service_data = NULL,
     .service_uuid_len = sizeof(adv_service_uuid128),
@@ -423,11 +393,11 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         gl_profile_tab[PROFILE_A_APP_ID].service_id.id.uuid.len = ESP_UUID_LEN_16;
         gl_profile_tab[PROFILE_A_APP_ID].service_id.id.uuid.uuid.uuid16 = GATTS_SERVICE_UUID_TEST_A;
 
-        // esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
-        // if (set_dev_name_ret)
-        // {
-        //     ESP_LOGE(GATTS_TAG, "set device name failed, error code = %x", set_dev_name_ret);
-        // }
+        esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME);
+        if (set_dev_name_ret)
+        {
+            ESP_LOGE(GATTS_TAG, "set device name failed, error code = %x", set_dev_name_ret);
+        }
 #ifdef CONFIG_SET_RAW_ADV_DATA
         esp_err_t raw_adv_ret = esp_ble_gap_config_adv_data_raw(raw_adv_data, sizeof(raw_adv_data));
         if (raw_adv_ret)
@@ -463,18 +433,17 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
     case ESP_GATTS_READ_EVT: // gatt触发读事件
     {
         ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d\n", param->read.conn_id, param->read.trans_id, param->read.handle);
-        // esp_gatt_rsp_t rsp;
-        // memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
-        // rsp.attr_value.handle = param->read.handle;
-        // rsp.attr_value.len = 4;
-        // rsp.attr_value.value[0] = 0xde;
-        // rsp.attr_value.value[1] = 0xed;
-        // rsp.attr_value.value[2] = 0xbe;
-        // rsp.attr_value.value[3] = 0xef;
-        // esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id,
-        //                             ESP_GATT_OK, &rsp);
-        gl_profile_tab[PROFILE_A_APP_ID].gatts_if = gatts_if;
-        gl_profile_tab[PROFILE_A_APP_ID].read_handle = param->read.handle;
+        if (gatt_event_idx_by_id(events, ARRAY_LEN(events), event) == -1) { // 蓝牙没订阅要返回一个空
+            esp_gatt_rsp_t rsp;
+            memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
+            rsp.attr_value.handle = param->read.handle;
+            rsp.attr_value.len = 0;
+            esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id,
+                                        ESP_GATT_OK, &rsp);
+        } else {
+            gl_profile_tab[PROFILE_A_APP_ID].gatts_if = gatts_if;
+            gl_profile_tab[PROFILE_A_APP_ID].read_handle = param->read.handle;
+        }
         break;
     }
     case ESP_GATTS_WRITE_EVT: // gatt触发写事件
@@ -734,7 +703,7 @@ static int gatt_start(lua_State *L)
         ESP_LOGE(GATTS_TAG, "gatts app register error, error code = %x", ret);
         return 0;
     }
-    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(23);
+    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
     if (local_mtu_ret)
     {
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);

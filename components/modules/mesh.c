@@ -6,7 +6,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#if 0
+
+#ifdef CONFIG_BLE_MESH
+
+
 #include <stdio.h>
 #include <string.h>
 
@@ -22,6 +25,8 @@
 #include "esp_bt.h"
 #include "esp_bt_main.h"
 #include "esp_bt_device.h"
+
+
 
 #include "esp_ble_mesh_defs.h"
 #include "esp_ble_mesh_common_api.h"
@@ -403,4 +408,5 @@ LROT_BEGIN(mesh)
 LROT_END(mesh, NULL, 0)
 
 NODEMCU_MODULE(MESH, "mesh", mesh, NULL);
+
 #endif
