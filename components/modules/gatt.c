@@ -32,6 +32,8 @@ enum
 };
 
 #define GATTS_TAG "GATTS_DEMO"
+static lua_State *gL = NULL;
+esp_gatt_rsp_t rsp;
 
 #define ARRAY_LEN(a) (sizeof(a) / sizeof(a[0]))
 typedef void (*fill_cb_arg_fn)(lua_State *L, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
@@ -464,8 +466,6 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                  int idx = gatt_event_idx_by_id(events, ARRAY_LEN(events), event);
                 if (idx < 0 || event_cb[idx] == LUA_NOREF) { // 蓝牙没订阅要返回一个空
                     ESP_LOGI(GATTS_TAG, "ESP_GATTS_READ_EVT DEFAULT READ");
-                    esp_gatt_rsp_t rsp;
-                    memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
                     rsp.attr_value.handle = param->read.handle;
                     rsp.attr_value.len = 0;
                     esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id,
@@ -488,12 +488,12 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                         ESP_LOGI(GATTS_TAG, "notify enable");
                         heart_rate_handle_table[IDX_CHAR_VAL_A].gatts_if = gatts_if;
                         heart_rate_handle_table[IDX_CHAR_VAL_A].param = param;
-                        on_event(ESP_GATTS_CONNECT_EVT, gatts_if, param);
+                        return on_event(ESP_GATTS_CONNECT_EVT, gatts_if, param);
                     }else if (descr_value == 0x0002){
                         ESP_LOGI(GATTS_TAG, "indicate enable");
                         heart_rate_handle_table[IDX_CHAR_VAL_A].gatts_if = gatts_if;
                         heart_rate_handle_table[IDX_CHAR_VAL_A].param = param;
-                        on_event(ESP_GATTS_CONNECT_EVT, gatts_if, param);
+                        return on_event(ESP_GATTS_CONNECT_EVT, gatts_if, param);
                     }
                     else if (descr_value == 0x0000){
                         heart_rate_handle_table[IDX_CHAR_VAL_A].gatts_if = ESP_GATT_IF_NONE;
@@ -719,17 +719,17 @@ static int gatt_stop(lua_State *L)
 
 static void on_event(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    ESP_LOGE(GATTS_TAG, "on_event evt:%d  gatts_if :%d", evt, gatts_if);
     int idx = gatt_event_idx_by_id(events, ARRAY_LEN(events), evt);
-    if (idx < 0 || event_cb[idx] == LUA_NOREF) 
+    if (idx < 0 || event_cb[idx] == LUA_NOREF || !gL) 
         return;
     
-    lua_State *L = lua_getstate();
-    lua_rawgeti(L, LUA_REGISTRYINDEX, event_cb[idx]);
-    lua_pushstring(L, events[idx].name);
-    lua_createtable(L, 0, 5);
-    events[idx].fill_cb_arg(L, gatts_if, param);
-    lua_call(L, 2, 0);
+    int top = lua_gettop(gL);
+    lua_rawgeti(gL, LUA_REGISTRYINDEX, event_cb[idx]);
+    lua_pushstring(gL, events[idx].name);
+    lua_createtable(gL, 0, 5);
+    events[idx].fill_cb_arg(gL, gatts_if, param);
+    lua_call(gL, 2, 0);
+    lua_settop(gL, top);
 }
 
 // test pass
@@ -748,6 +748,8 @@ static int gatt_on(lua_State *L)
 
     luaL_unref(L, LUA_REGISTRYINDEX, event_cb[idx]);
     event_cb[idx] = lua_isnoneornil(L, 2) ? LUA_NOREF : luaL_ref(L, LUA_REGISTRYINDEX);
+
+    gL = L;
 
     return 0;
 }
@@ -783,18 +785,15 @@ static int gatt_response (lua_State *L) {
     uint32_t trans_id = lua_tonumber(L, 2);
     size_t len = 0;
     const char* buf = luaL_checklstring(L, 3, &len);
-
-    esp_gatt_rsp_t rsp;
-    memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
     rsp.attr_value.handle = heart_rate_handle_table[IDX_CHAR_VAL_B].handle;
     rsp.attr_value.len = len;
     memcpy(rsp.attr_value.value, buf, len);
     esp_err_t ret = esp_ble_gatts_send_response(heart_rate_handle_table[IDX_CHAR_VAL_B].gatts_if, conn_id, trans_id,
                                 ESP_GATT_OK, &rsp);
+                            
     if (ret)
     {
         ESP_LOGE(GATTS_TAG, "gatts response error, error code = %x", ret);
-        return 0;
     }                           
     return 0;
 }
@@ -816,6 +815,7 @@ static int gatt_init(lua_State *L)
     {
         event_cb[i] = LUA_NOREF;
     }
+    memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
     return 0;
 }
 
