@@ -693,11 +693,11 @@ static void gatt_start(lua_State *L)
         ESP_LOGE(GATTS_TAG, "gatts app register error, error code = %x", ret);
         return 0;
     }
-    ret = esp_ble_gatt_set_local_mtu(500);
-    if (ret)
-    {
-        ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", ret);
-    }
+    // ret = esp_ble_gatt_set_local_mtu(500);
+    // if (ret)
+    // {
+    //     ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", ret);
+    // }
 
     return 0;
 }
